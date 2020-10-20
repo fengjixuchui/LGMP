@@ -102,14 +102,15 @@ LGMP_STATUS lgmpClientSessionInit(PLGMPClient client, uint32_t * udataSize,
   if (header->version != LGMP_PROTOCOL_VERSION)
     return LGMP_ERR_INVALID_VERSION;
 
+  uint64_t timestamp = atomic_load(&header->timestamp);
 #ifndef LGMP_REALACY
   // check the host's timestamp is updating
-  if (atomic_load(&header->timestamp) == client->hosttime)
+  if (timestamp == client->hosttime)
     return LGMP_ERR_INVALID_SESSION;
 #endif
 
   client->sessionID     = header->sessionID;
-  client->hosttime      = header->timestamp;
+  client->hosttime      = timestamp;
   client->lastHeartbeat = lgmpGetClockMS();
 
   if (udataSize) *udataSize = header->udataSize;
@@ -260,7 +261,12 @@ LGMP_STATUS lgmpClientAdvanceToLast(PLGMPClientQueue queue)
     return LGMP_ERR_QUEUE_TIMEOUT;
 
   if (!(LGMP_SUBS_ON(subs) & bit))
-    return LGMP_ERR_QUEUE_UNSUBSCRIBED;
+  {
+    if (lgmpClientSessionValid(queue->client))
+      return LGMP_ERR_QUEUE_UNSUBSCRIBED;
+    else
+      return LGMP_ERR_INVALID_SESSION;
+  }
 
   uint32_t end = atomic_load(&hq->position);
   if (end == queue->position)
@@ -320,8 +326,8 @@ LGMP_STATUS lgmpClientAdvanceToLast(PLGMPClientQueue queue)
   if (locked)
   {
     // update the timeout
-    hq->msgTimeout =
-      atomic_load(&queue->header->timestamp) + hq->maxTime;
+    atomic_store(&hq->msgTimeout,
+        atomic_load(&queue->header->timestamp) + hq->maxTime);
     LGMP_QUEUE_UNLOCK(hq);
   }
 
@@ -342,7 +348,12 @@ LGMP_STATUS lgmpClientProcess(PLGMPClientQueue queue, PLGMPMessage result)
     return LGMP_ERR_QUEUE_TIMEOUT;
 
   if (!(LGMP_SUBS_ON(subs) & bit))
-    return LGMP_ERR_QUEUE_UNSUBSCRIBED;
+  {
+    if (lgmpClientSessionValid(queue->client))
+      return LGMP_ERR_QUEUE_UNSUBSCRIBED;
+    else
+      return LGMP_ERR_INVALID_SESSION;
+  }
 
   if (atomic_load(&hq->position) == queue->position)
     return LGMP_ERR_QUEUE_EMPTY;
@@ -370,7 +381,12 @@ LGMP_STATUS lgmpClientMessageDone(PLGMPClientQueue queue)
     return LGMP_ERR_QUEUE_TIMEOUT;
 
   if (!(LGMP_SUBS_ON(subs) & bit))
-    return LGMP_ERR_QUEUE_UNSUBSCRIBED;
+  {
+    if (lgmpClientSessionValid(queue->client))
+      return LGMP_ERR_QUEUE_UNSUBSCRIBED;
+    else
+      return LGMP_ERR_INVALID_SESSION;
+  }
 
   if (atomic_load(&hq->position) == queue->position)
     return LGMP_ERR_QUEUE_EMPTY;
@@ -397,8 +413,8 @@ LGMP_STATUS lgmpClientMessageDone(PLGMPClientQueue queue)
 
     // decrement the count and update the timeout
     atomic_fetch_sub(&hq->count, 1);
-    hq->msgTimeout =
-      atomic_load(&queue->header->timestamp) + hq->maxTime;
+    atomic_store(&hq->msgTimeout,
+      atomic_load(&queue->header->timestamp) + hq->maxTime);
 
     LGMP_QUEUE_UNLOCK(hq);
   }

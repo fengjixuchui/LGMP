@@ -65,7 +65,7 @@ struct LGMPHeaderQueue
   atomic_flag lock;
   _Atomic(uint64_t) subs; // see LGMP_SUBS_* macros
   uint32_t start;
-  uint64_t msgTimeout;
+  _Atomic(uint64_t) msgTimeout;
   _Atomic(uint32_t) count;
 };
 
@@ -74,7 +74,7 @@ struct LGMPHeader
   uint32_t magic;
   uint32_t version;
   uint32_t sessionID;
-  uint64_t timestamp;
+  _Atomic(uint64_t) timestamp;
   uint32_t numQueues;
   struct LGMPHeaderQueue queues[LGMP_MAX_QUEUES];
   uint32_t udataSize;
